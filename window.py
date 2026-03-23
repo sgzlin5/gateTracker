@@ -3,14 +3,15 @@ import os
 import sys
 import copy
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QMenu,
-                               QDialog, QSpinBox, QDialogButtonBox, QLabel,
-                               QCheckBox)
+                                QDialog, QSpinBox, QDialogButtonBox, QLabel,
+                                QCheckBox, QMessageBox)
 from PyQt6.QtCore import Qt, QPoint
 from PyQt6.QtGui import QCursor, QAction
 from price_widget import PriceWidget
 from ws_client import WSClient
 from theme_manager import ThemeManager
 from taskbar_display import TaskbarDisplayController
+from system_tray import SystemTrayController
 
 class PriceWindow(QMainWindow):
     """价格浮窗主窗口"""
@@ -47,6 +48,10 @@ class PriceWindow(QMainWindow):
         if hasattr(self.taskbar_display, 'closed'):
             self.taskbar_display.closed.connect(self._on_taskbar_display_closed)
         
+        # 初始化系统托盘控制器
+        self.system_tray = SystemTrayController(self)
+        self._connect_system_tray_signals()
+        
         # 连接WebSocket
         self._connect_websocket()
         
@@ -55,6 +60,9 @@ class PriceWindow(QMainWindow):
         
         # 加载窗口位置和大小保存
         self._load_window_state()
+        
+        # 更新托盘图标状态
+        self._update_tray_status()
     
     def _load_config(self):
         """加载配置文件"""
@@ -218,6 +226,12 @@ class PriceWindow(QMainWindow):
             title_parts.append(f"{symbol} {last_price:.2f} {change_symbol}")
         
         self.setWindowTitle(" | ".join(title_parts))
+        
+        # 更新托盘图标的工具提示
+        if hasattr(self, 'system_tray') and self.system_tray.is_available():
+            self.system_tray.update_tooltip(
+                f"Gate Price Tracker - {self.windowTitle()}"
+            )
     
     def _on_connection_lost(self):
         """连接丢失回调"""
@@ -263,6 +277,55 @@ class PriceWindow(QMainWindow):
         self.config["window"]["height"] = height
         self._save_config()
     
+    def _connect_system_tray_signals(self):
+        """连接系统托盘信号"""
+        if not self.system_tray.is_available():
+            print("系统托盘不可用")
+            return
+        
+        # 显示/隐藏主窗口
+        self.system_tray.show_window_requested.connect(self._on_show_window)
+        self.system_tray.hide_window_requested.connect(self._on_hide_window)
+        
+        # 切换任务栏显示器
+        self.system_tray.toggle_taskbar_display_requested.connect(self.toggle_taskbar_display)
+        
+        # 切换主题
+        self.system_tray.toggle_theme_requested.connect(self.toggle_theme)
+        
+        # 显示设置
+        self.system_tray.show_settings_requested.connect(self.show_size_dialog)
+        
+        # 退出程序
+        self.system_tray.exit_requested.connect(self._on_force_exit)
+    
+    def _on_show_window(self):
+        """显示主窗口"""
+        self.showNormal()
+        self.activateWindow()
+        self._update_tray_status()
+    
+    def _on_hide_window(self):
+        """隐藏主窗口"""
+        self.hide()
+        self._update_tray_status()
+    
+    def _update_tray_status(self):
+        """更新托盘图标状态"""
+        if self.system_tray.is_available():
+            # 更新显示/隐藏按钮文本
+            self.system_tray.update_show_hide_action(self.isVisible())
+            
+            # 更新任务栏显示器状态
+            self.system_tray.update_taskbar_display_action(
+                self.taskbar_display.display_window is not None
+            )
+            
+            # 更新工具提示
+            self.system_tray.update_tooltip(
+                f"Gate Price Tracker - {self.windowTitle()}"
+            )
+    
     def toggle_theme(self):
         """切换主题"""
         new_theme = self.theme_manager.toggle()
@@ -272,6 +335,9 @@ class PriceWindow(QMainWindow):
     def toggle_taskbar_display(self):
         """切换任务栏显示器的显示状态"""
         self.taskbar_display.toggle()
+        
+        # 更新托盘状态
+        self._update_tray_status()
         
         # 如果任务栏显示器正在显示，则最小化主窗口
         if self.taskbar_display.display_window is not None:
@@ -442,13 +508,44 @@ class PriceWindow(QMainWindow):
                 self.setWindowFlags(current_flags)
                 self.show()
     
-    def closeEvent(self, event):
-        """窗口关闭事件"""
+    def _on_force_exit(self):
+        """强制退出程序"""
         # 保存窗口状态
         self._save_window_state()
         
         # 关闭任务栏显示器
         self.taskbar_display.cleanup()
+        
+        # 关闭系统托盘
+        if hasattr(self, 'system_tray'):
+            self.system_tray.cleanup()
+        
+        # 关闭WebSocket连接
+        if self.ws_client:
+            self.ws_client.close()
+        
+        # 退出应用程序
+        from PyQt6.QtWidgets import QApplication
+        QApplication.instance().quit()
+    
+    def closeEvent(self, event):
+        """窗口关闭事件"""
+        # 如果系统托盘可用，则隐藏到托盘而不是退出
+        if self.system_tray.is_available():
+            self.hide()
+            self._update_tray_status()
+            event.ignore()
+            return
+        
+        # 保存窗口状态
+        self._save_window_state()
+        
+        # 关闭任务栏显示器
+        self.taskbar_display.cleanup()
+        
+        # 关闭系统托盘
+        if hasattr(self, 'system_tray'):
+            self.system_tray.cleanup()
         
         # 关闭WebSocket连接
         if self.ws_client:
