@@ -62,7 +62,7 @@ class PriceWidget(QWidget):
                 - price_change_rate: 涨跌幅百分比
                 - high: 最高价
                 - low: 最低价
-                - open: 开盘价
+                - open_price: 开盘价
         """
         try:
             # 更新最新价格
@@ -81,7 +81,7 @@ class PriceWidget(QWidget):
             low = float(data.get('low', 0))
             
             # 更新开盘价
-            open_price = float(data.get('open', 0))
+            open_price = float(data.get('open_price', 0))
             
             # 合并所有信息到一个标签（交易对名 + 价格 + 价格变动值 + 涨跌幅 + 高低 + 开盘价）
             price_info = f"{self.symbol}  {self.last_price:.2f}  {change_amount_text}  {change_rate_text}  H:{high:.2f}  L:{low:.2f}  O:{open_price:.2f}"

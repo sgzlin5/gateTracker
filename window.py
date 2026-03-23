@@ -38,7 +38,6 @@ class PriceWindow(QMainWindow):
         
         # 初始化WebSocket客户端
         self.ws_client = None
-        self.price_widgets = {}
         
         # 初始化任务栏显示控制器
         markets = self.config.get("markets", ["XAUUSD", "NAS100"])
